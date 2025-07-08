@@ -1,0 +1,97 @@
+name: Deploy LangConnect API
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'langconnect/**'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2  # Needed to check for changes
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+          
+      # Replace AWS_ACCOUNT_ID placeholder in task definition
+      - name: Replace AWS account ID in task definition
+        run: |
+          sed -i "s/{{AWS_ACCOUNT_ID}}/${{ secrets.AWS_ACCOUNT_ID }}/g" langconnect-api-task-definition.json
+          echo "Replaced AWS account ID placeholders in task definition"
+          
+      # Check if code has changed (excluding task definition)
+      - name: Check for code changes
+        id: code-changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD^ HEAD | grep -v "langconnect-api-task-definition.json" | grep "langconnect/\|\*.js\|\*.ts" | wc -l)
+          if [ $CHANGED -gt 0 ]; then
+            echo "code_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "code_changed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      # Check if task definition has changed
+      - name: Check for task definition changes
+        id: task-def-changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD^ HEAD | grep "langconnect-api-task-definition.json" | wc -l)
+          if [ $CHANGED -gt 0 ]; then
+            echo "task_def_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "task_def_changed=false" >> $GITHUB_OUTPUT
+          fi
+          
+      # Only run ECR steps if code has changed
+      - name: Login to Amazon ECR
+        if: steps.code-changes.outputs.code_changed == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        
+      - name: Build, tag, and push image to Amazon ECR
+        if: steps.code-changes.outputs.code_changed == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: langconnect-api
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd langconnect
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "New image pushed to ECR: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          
+      # Only update task definition if code changed OR task definition changed
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        if: steps.code-changes.outputs.code_changed == 'true' || steps.task-def-changes.outputs.task_def_changed == 'true'
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: langconnect-api-task-definition.json
+          container-name: langconnect-api-container
+          image: ${{ steps.login-ecr.outputs.registry }}/langconnect-api:${{ github.sha }}
+          
+      # Only deploy if task definition was updated
+      - name: Deploy Amazon ECS task definition
+        if: steps.code-changes.outputs.code_changed == 'true' || steps.task-def-changes.outputs.task_def_changed == 'true'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: langconnect-api-service
+          cluster: centsai-cluster
+          wait-for-service-stability: true
+          
+      # Only wait for service to stabilize if deployment was triggered
+      - name: Wait for service to stabilize
+        if: steps.code-changes.outputs.code_changed == 'true' || steps.task-def-changes.outputs.task_def_changed == 'true'
+        run: |
+          aws ecs wait services-stable --cluster centsai-cluster --services langconnect-api-service --region us-east-2
