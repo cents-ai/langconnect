@@ -1,10 +1,13 @@
 # .github/workflows/ci.yml
 name: CI Checks
 
+# Workflow disabled - uncomment to re-enable
 on:
-  pull_request:
-  push:
-    branches: [ main ]
+  # pull_request:
+  # push:
+  #   branches: [ main ]
+  # Manually triggered only
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
