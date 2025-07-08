@@ -6,6 +6,7 @@ on:
     paths:
       - 'langconnect/**'
       - '.github/workflows/deploy.yml'
+      - 'README.md'
 
 jobs:
   deploy:
