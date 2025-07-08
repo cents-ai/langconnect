@@ -1,0 +1,92 @@
+{
+  "family": "langconnect-api-task",
+  "executionRoleArn": "arn:aws:iam::{{AWS_ACCOUNT_ID}}:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "langconnect-api-container",
+      "image": "{{AWS_ACCOUNT_ID}}.dkr.ecr.us-east-2.amazonaws.com/langconnect-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp",
+          "name": "api",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/langconnect-api/openai_api_key"
+        },
+        {
+          "name": "POSTGRES_HOST",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/postgres_host"
+        },
+        {
+          "name": "POSTGRES_PORT",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/postgres_port"
+        },
+        {
+          "name": "POSTGRES_USER",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/postgres_user"
+        },
+        {
+          "name": "POSTGRES_PASSWORD",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/postgres_password"
+        },
+        {
+          "name": "POSTGRES_DB",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/postgres_db"
+        },
+        {
+          "name": "ALLOW_ORIGINS",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/langconnect-api/allow_origins"
+        },
+        {
+          "name": "SUPABASE_URL",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/langconnect-api/supabase_url"
+        },
+        {
+          "name": "SUPABASE_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/langconnect-api/supabase_key"
+        },
+        {
+          "name": "IS_TESTING",
+          "valueFrom": "arn:aws:ssm:us-east-2:{{AWS_ACCOUNT_ID}}:parameter/centsai/langconnect-api/is_testing"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/langconnect-api-task",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "command": ["python", "-m", "uvicorn", "langconnect.server:APP", "--host", "0.0.0.0", "--port", "8080"],
+      "cpu": 256,
+      "memory": 512,
+      "memoryReservation": 256
+    }
+  ],
+  "requiresCompatibilities": [
+    "EC2"
+  ],
+  "cpu": "256",
+  "memory": "512",
+  "tags": [
+    {
+      "key": "Project",
+      "value": "Centsai"
+    }
+  ]
+}
